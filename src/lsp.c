@@ -113,6 +113,7 @@ void lsp_did_open(const char *filepath, const char *lang, const char *content) {
         else if (content[i] == '"') { escaped[ei++] = '\\'; escaped[ei++] = '"'; }
         else if (content[i] == '\n') { escaped[ei++] = '\\'; escaped[ei++] = 'n'; }
         else if (content[i] == '\r') { escaped[ei++] = '\\'; escaped[ei++] = 'r'; }
+        else if (content[i] == '\t') { escaped[ei++] = '\\'; escaped[ei++] = 't'; }
         else escaped[ei++] = content[i];
     }
     escaped[ei] = '\0';
@@ -148,6 +149,7 @@ void lsp_did_change(const char *filepath, const char *content) {
         else if (content[i] == '"') { escaped[ei++] = '\\'; escaped[ei++] = '"'; }
         else if (content[i] == '\n') { escaped[ei++] = '\\'; escaped[ei++] = 'n'; }
         else if (content[i] == '\r') { escaped[ei++] = '\\'; escaped[ei++] = 'r'; }
+        else if (content[i] == '\t') { escaped[ei++] = '\\'; escaped[ei++] = 't'; }
         else escaped[ei++] = content[i];
     }
     escaped[ei] = '\0';

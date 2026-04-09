@@ -408,19 +408,28 @@ void editor_insert_char(uint32_t cp) {
 void editor_insert_newline(void) {
     if (g.active_tab < 0) return;
     Tab *t = &g.tabs[g.active_tab];
-    /* Auto-indent: copy leading whitespace from current line */
-    Line *l = &t->buf.lines[t->cursor_row];
+    /* Auto-indent: capture leading whitespace before newline insertion
+       (buf_insert_newline may realloc lines[], invalidating the pointer) */
+    char indent_buf[256];
     int ws = 0;
-    while (ws < l->len && (l->data[ws] == ' ' || l->data[ws] == '\t')) ws++;
+    {
+        Line *l = &t->buf.lines[t->cursor_row];
+        while (ws < l->len && (l->data[ws] == ' ' || l->data[ws] == '\t') &&
+               ws < (int)sizeof(indent_buf) - 1) {
+            indent_buf[ws] = l->data[ws];
+            ws++;
+        }
+        indent_buf[ws] = '\0';
+    }
 
     buf_insert_newline(&t->buf, t->cursor_row, t->cursor_col);
     t->cursor_row++;
     t->cursor_col = 0;
 
-    /* Insert auto-indent */
-    for (int i = 0; i < ws && i < t->cursor_col + ws; i++) {
+    /* Insert auto-indent using the captured copy */
+    for (int i = 0; i < ws; i++) {
         buf_insert_char(&t->buf, t->cursor_row, t->cursor_col,
-                        (unsigned char)l->data[i]);
+                        (unsigned char)indent_buf[i]);
         t->cursor_col++;
     }
     g.needs_redraw = true;

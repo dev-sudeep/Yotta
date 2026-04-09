@@ -103,7 +103,9 @@ void ui_put_cell(int row, int col, uint32_t ch,
     c->bold   = bold;
     c->italic = italic;
     strncpy(c->fg, fg ? fg : COL_FG,  sizeof(c->fg) - 1);
+    c->fg[sizeof(c->fg) - 1] = '\0';
     strncpy(c->bg, bg ? bg : COL_BG,  sizeof(c->bg) - 1);
+    c->bg[sizeof(c->bg) - 1] = '\0';
 }
 
 int ui_put_str(int row, int col, const char *s,
@@ -235,10 +237,12 @@ void ui_flush(void) {
             if (bg_changed) {
                 out_puts(bc->bg);
                 strncpy(cur_bg, bc->bg, sizeof(cur_bg) - 1);
+                cur_bg[sizeof(cur_bg) - 1] = '\0';
             }
             if (fg_changed) {
                 out_puts(bc->fg);
                 strncpy(cur_fg, bc->fg, sizeof(cur_fg) - 1);
+                cur_fg[sizeof(cur_fg) - 1] = '\0';
             }
             if (bc->bold   && !cur_bold)   { out_puts("\x1b[1m"); cur_bold   = true; }
             if (bc->italic && !cur_italic) { out_puts("\x1b[3m"); cur_italic = true; }
@@ -869,7 +873,9 @@ void ui_render(void) {
     for (size_t i = 0; i < n; i++) {
         back_buf[i].ch = ' ';
         strncpy(back_buf[i].fg, COL_FG, sizeof(back_buf[i].fg) - 1);
+        back_buf[i].fg[sizeof(back_buf[i].fg) - 1] = '\0';
         strncpy(back_buf[i].bg, COL_BG, sizeof(back_buf[i].bg) - 1);
+        back_buf[i].bg[sizeof(back_buf[i].bg) - 1] = '\0';
         back_buf[i].bold = back_buf[i].italic = false;
     }
 

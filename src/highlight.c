@@ -427,7 +427,7 @@ const char *hl_detect_lang(const char *filepath) {
     if (strcmp(dot, "json") == 0)return "json";
     if (strcmp(dot, "sh") == 0 || strcmp(dot, "bash") == 0 ||
         strcmp(dot, "zsh") == 0) return "bash";
-    if (strcmp(dot, "js") == 0 || strcmp(dot, "ts") == 0) return "bash"; /* stub */
+    if (strcmp(dot, "js") == 0 || strcmp(dot, "ts") == 0) return ""; /* not yet highlighted */
     if (strcmp(dot, "md") == 0)  return "";
     return "";
 }
