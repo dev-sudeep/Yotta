@@ -63,6 +63,26 @@ static inline int clamp(int v, int lo, int hi) {
     return v < lo ? lo : v > hi ? hi : v;
 }
 
+/*
+ * Count the number of displayed columns for a UTF-8 string.
+ * This approximates one column per Unicode codepoint (sufficient for the
+ * ASCII + BMP characters used in tab labels; wide CJK characters are not
+ * present in file names in the common case).
+ */
+static inline int utf8_display_cols(const char *s) {
+    int cols = 0;
+    const unsigned char *p = (const unsigned char *)s;
+    while (*p) {
+        if (*p < 0x80)              { p += 1; }
+        else if ((*p & 0xE0)==0xC0) { p += 2; }
+        else if ((*p & 0xF0)==0xE0) { p += 3; }
+        else if ((*p & 0xF8)==0xF0) { p += 4; }
+        else                        { p += 1; } /* invalid byte: skip one */
+        cols++;
+    }
+    return cols;
+}
+
 /* Render the full UI */
 void ui_render(void);
 

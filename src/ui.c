@@ -383,9 +383,36 @@ void ui_render_tab_bar(void) {
     /* Fill tab bar background */
     ui_fill_rect(row - 1, 0, cols, 1, COL_BG_TAB);
 
-    /* App name */
+    /* App name at far left */
     ui_put_str(row - 1, 0, " Yotta ", COL_FG_ACCENT, COL_BG_TAB, true, false);
-    int col = 7;
+
+    /* ── Position tabs centred within the editor (middle) pane ── */
+    /* Editor pane geometry is already computed by compute_layout() before  */
+    /* ui_render_tab_bar() is called.  Fall back to column 7 when no pane.  */
+    int editor_x = (g.panes[PANE_EDITOR].visible && g.panes[PANE_EDITOR].w > 0)
+                   ? (g.panes[PANE_EDITOR].x - 1)   /* 0-based start col */
+                   : 7;
+    int editor_w = (g.panes[PANE_EDITOR].visible && g.panes[PANE_EDITOR].w > 0)
+                   ? g.panes[PANE_EDITOR].w
+                   : (cols - 7);
+
+    /* Calculate total width of all tab labels */
+    int total_tabs_w = 0;
+    for (int i = 0; i < g.tab_count; i++) {
+        Tab *t = &g.tabs[i];
+        const char *name = t->title[0] ? t->title : "untitled";
+        const char *slash = strrchr(name, '/');
+        if (slash) name = slash + 1;
+        char label[64];
+        snprintf(label, sizeof(label), " %s%s ", name, t->buf.modified ? " \xe2\x97\x8f" : "");
+        total_tabs_w += utf8_display_cols(label) + 1; /* +1 for separator */
+    }
+
+    /* Centre tabs; clamp to [editor_x, editor_x+editor_w-2] */
+    int col = editor_x;
+    if (total_tabs_w < editor_w - 2)
+        col = editor_x + (editor_w - total_tabs_w) / 2;
+    if (col > editor_x + editor_w - 2) col = editor_x + editor_w - 2;
 
     /* Draw tabs */
     for (int i = 0; i < g.tab_count && col < cols - 2; i++) {
@@ -399,17 +426,30 @@ void ui_render_tab_bar(void) {
         /* get basename */
         const char *slash = strrchr(name, '/');
         if (slash) name = slash + 1;
-        snprintf(label, sizeof(label), " %s%s ", name, t->buf.modified ? " ●" : "");
+        snprintf(label, sizeof(label), " %s%s ", name, t->buf.modified ? " \xe2\x97\x8f" : "");
 
-        int llen = (int)strlen(label);
+        int llen = utf8_display_cols(label);
         if (col + llen > cols - 2) llen = cols - 2 - col;
         if (llen <= 0) break;
 
-        for (int j = 0; j < llen; j++) {
-            ui_put_cell(row - 1, col + j, (unsigned char)label[j],
-                        tfg, tbg, active, false);
+        /* Render label bytes (may contain multi-byte UTF-8 for ●) */
+        int written = 0;
+        const unsigned char *lp = (const unsigned char *)label;
+        while (*lp && written < llen) {
+            uint32_t cp;
+            int blen;
+            if (*lp < 0x80) { cp = *lp; blen = 1; }
+            else if ((*lp & 0xE0) == 0xC0) { cp = *lp & 0x1F; blen = 2; }
+            else if ((*lp & 0xF0) == 0xE0) { cp = *lp & 0x0F; blen = 3; }
+            else if ((*lp & 0xF8) == 0xF0) { cp = *lp & 0x07; blen = 4; }
+            else { cp = *lp; blen = 1; } /* invalid byte: render as-is */
+            for (int bi = 1; bi < blen && lp[bi]; bi++)
+                cp = (cp << 6) | (lp[bi] & 0x3F);
+            lp += blen;
+            ui_put_cell(row - 1, col + written, cp, tfg, tbg, active, false);
+            written++;
         }
-        col += llen;
+        col += written;
         /* separator */
         if (col < cols - 2)
             ui_put_cell(row - 1, col++, BOX_V, COL_FG_BORDER, COL_BG_TAB, false, false);
@@ -792,6 +832,43 @@ void ui_render_chat(void) {
 /* ─────────────────────────────────────────────────────────────────────────── */
 /*  Terminal pane                                                              */
 /* ─────────────────────────────────────────────────────────────────────────── */
+
+/*
+ * Advance `s` past an ANSI/VT100 escape sequence starting at `s` (which must
+ * point at the ESC byte).  Returns a pointer to the first byte after the
+ * sequence, or s+1 if the sequence cannot be parsed.
+ */
+static const char *skip_escape(const char *s, const char *end) {
+    if (s >= end || (unsigned char)*s != 0x1b) return s + 1;
+    s++; /* skip ESC */
+    if (s >= end) return s;
+
+    if (*s == '[') {
+        /* CSI – ESC [ <params> <final>  where final is 0x40..0x7E */
+        s++;
+        while (s < end && ((unsigned char)*s < 0x40 || (unsigned char)*s > 0x7E))
+            s++;
+        if (s < end) s++; /* final byte */
+    } else if (*s == ']') {
+        /* OSC – ESC ] ... BEL  or  ESC ] ... ESC \ */
+        s++;
+        while (s < end) {
+            if ((unsigned char)*s == 0x07) { s++; break; }
+            if ((unsigned char)*s == 0x1b && (s + 1) < end &&
+                (unsigned char)*(s + 1) == '\\') { s += 2; break; }
+            s++;
+        }
+    } else if (*s == '(' || *s == ')' || *s == '*' || *s == '+') {
+        /* Charset designation – ESC ( X */
+        s++;
+        if (s < end) s++;
+    } else {
+        /* Other two-byte sequences: ESC = ESC > ESC 7 ESC 8 etc. */
+        s++;
+    }
+    return s;
+}
+
 void ui_render_terminal(void) {
     PaneGeom *p = &g.panes[PANE_TERMINAL];
     if (!p->visible) return;
@@ -841,16 +918,23 @@ void ui_render_terminal(void) {
         const char *le = (l + 1 < lcount) ? lines[l + 1] - 1 : end;
         int col2 = 0;
         while (ls < le && col2 < inner_w) {
-            unsigned char c2 = (unsigned char)*ls++;
-            if (c2 == '\r') continue;
-            if (c2 < 0x80)
+            unsigned char c2 = (unsigned char)*ls;
+            if (c2 == '\r') { ls++; continue; }
+            /* Skip ANSI/VT100 escape sequences */
+            if (c2 == 0x1b) { ls = skip_escape(ls, le); continue; }
+            /* Skip bare control characters (except printable range) */
+            if (c2 < 0x20) { ls++; continue; }
+            ls++;
+            if (c2 < 0x80) {
                 ui_put_cell(row2 - 1, p->x - 1 + col2++, c2, COL_FG, COL_BG, false, false);
-            else {
-                /* multi-byte */
-                uint32_t cp = c2;
-                int blen = (c2 & 0xE0) == 0xC0 ? 2 :
-                           (c2 & 0xF0) == 0xE0 ? 3 :
-                           (c2 & 0xF8) == 0xF0 ? 4 : 1;
+            } else {
+                /* Multi-byte UTF-8: mask significant bits of leading byte */
+                uint32_t cp;
+                int blen;
+                if ((c2 & 0xE0) == 0xC0)      { cp = c2 & 0x1F; blen = 2; }
+                else if ((c2 & 0xF0) == 0xE0) { cp = c2 & 0x0F; blen = 3; }
+                else if ((c2 & 0xF8) == 0xF0) { cp = c2 & 0x07; blen = 4; }
+                else { cp = c2; blen = 1; } /* invalid byte: render as-is */
                 for (int bi = 1; bi < blen && ls < le; bi++)
                     cp = (cp << 6) | ((unsigned char)*ls++ & 0x3F);
                 ui_put_cell(row2 - 1, p->x - 1 + col2++, cp, COL_FG, COL_BG, false, false);
