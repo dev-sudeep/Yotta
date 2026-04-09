@@ -15,4 +15,7 @@ void chat_handle_event(InputEvent *ev);
 /* Submit the current input as a user message */
 void chat_submit(void);
 
+/* Poll for pending copilot CLI output and append to chat */
+void copilot_poll(void);
+
 #endif /* YOTTA_CHAT_H */

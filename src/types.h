@@ -245,6 +245,14 @@ typedef struct {
     char  git_branch[128];
     bool  in_git_repo;
 
+    /* Copilot CLI */
+    int   copilot_status;      /* -1=unknown, 0=not_found, 1=available */
+    bool  copilot_install_prompt; /* waiting for user to confirm install */
+    pid_t copilot_pid;
+    int   copilot_stdout_fd;
+    char  copilot_resp_buf[65536];
+    int   copilot_resp_len;
+
     /* Quit flag */
     bool  quit;
     bool  needs_redraw;

@@ -62,8 +62,13 @@ static void query_term_size(void) {
 static void handle_mouse_click(int x, int y) {
     /* Tab bar (row 1) */
     if (y == 1) {
-        /* Switch tabs by clicking */
-        int col = 7; /* after "Yotta " */
+        /* Mirror the centering logic from ui_render_tab_bar() */
+        int editor_x = (g.panes[PANE_EDITOR].visible && g.panes[PANE_EDITOR].w > 0)
+                       ? (g.panes[PANE_EDITOR].x - 1) : 7;
+        int editor_w = (g.panes[PANE_EDITOR].visible && g.panes[PANE_EDITOR].w > 0)
+                       ? g.panes[PANE_EDITOR].w : (g.term_cols - 7);
+
+        int total_tabs_w = 0;
         for (int i = 0; i < g.tab_count; i++) {
             Tab *t = &g.tabs[i];
             const char *name = t->title[0] ? t->title : "untitled";
@@ -71,8 +76,24 @@ static void handle_mouse_click(int x, int y) {
             if (slash) name = slash + 1;
             char label[64];
             snprintf(label, sizeof(label), " %s%s ",
-                     name, t->buf.modified ? " ●" : "");
-            int llen = (int)strlen(label) + 1; /* +1 for separator */
+                     name, t->buf.modified ? " \xe2\x97\x8f" : "");
+            total_tabs_w += utf8_display_cols(label) + 1;
+        }
+
+        int col = editor_x;
+        if (total_tabs_w < editor_w - 2)
+            col = editor_x + (editor_w - total_tabs_w) / 2;
+        if (col > editor_x + editor_w - 2) col = editor_x + editor_w - 2;
+
+        for (int i = 0; i < g.tab_count; i++) {
+            Tab *t = &g.tabs[i];
+            const char *name = t->title[0] ? t->title : "untitled";
+            const char *slash = strrchr(name, '/');
+            if (slash) name = slash + 1;
+            char label[64];
+            snprintf(label, sizeof(label), " %s%s ",
+                     name, t->buf.modified ? " \xe2\x97\x8f" : "");
+            int llen = utf8_display_cols(label) + 1; /* +1 for separator */
             if (x >= col && x < col + llen - 1) {
                 editor_switch_tab(i);
                 return;
@@ -363,6 +384,10 @@ int main(int argc, char *argv[]) {
             FD_SET(g.lsp.stdout_fd, &rfds);
             if (g.lsp.stdout_fd > maxfd) maxfd = g.lsp.stdout_fd;
         }
+        if (g.copilot_stdout_fd >= 0) {
+            FD_SET(g.copilot_stdout_fd, &rfds);
+            if (g.copilot_stdout_fd > maxfd) maxfd = g.copilot_stdout_fd;
+        }
 
         struct timeval tv = { .tv_sec = 0, .tv_usec = 16000 }; /* ~16ms */
         int sel = select(maxfd + 1, &rfds, NULL, NULL, &tv);
@@ -382,6 +407,12 @@ int main(int argc, char *argv[]) {
         if (g.lsp.pid > 0 && g.lsp.stdout_fd >= 0 &&
             FD_ISSET(g.lsp.stdout_fd, &rfds)) {
             lsp_poll();
+        }
+
+        /* Copilot CLI output */
+        if (g.copilot_stdout_fd >= 0 &&
+            FD_ISSET(g.copilot_stdout_fd, &rfds)) {
+            copilot_poll();
         }
 
         /* Keyboard / mouse input */
